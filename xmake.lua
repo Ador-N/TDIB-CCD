@@ -1,6 +1,6 @@
 set_project("subdiv-ccd")
 set_languages("cxxlatest")
-set_optimize("faster")
+set_optimize("fastest")
 
 add_rules("mode.debug", "mode.release")
 add_requires("eigen","fmt")
