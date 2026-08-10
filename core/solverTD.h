@@ -34,7 +34,10 @@ public:
 			const std::array<Vector3d, ParamObj2::cntCp>& ptPos2,
 			const std::array<Vector3d, ParamObj2::cntCp>& ptVel2,
 			Array2d& colTime, const BoundingBoxType& bb,
-			const Array2d& initTimeIntv) {
+			const Array2d& initTimeIntv,
+			const double competingTime = INFT, bool* yielded = nullptr) {
+		// yielded means that only partial axes were evaluated
+		if(yielded != nullptr) *yielded = false;
 		// Enlarge the time interval by a small margin so that the end points are correctly treated
 		Array2d timeIntv(initTimeIntv[0]-1e-6, initTimeIntv[1]+1e-6);
 
@@ -71,35 +74,32 @@ public:
 			std::sort(ptLines2.begin(), ptLines2.end());
 			AxisCheck(ptLines1, ptLines2);
 			AxisCheck(ptLines2, ptLines1);
+
+			// Merge separating intervals connected to either end of the current candidate interval.
+			double prevMinT, prevMaxT;
+			do {
+				prevMinT = minT;
+				prevMaxT = maxT;
+				for(int i = 0; i < feasibleCount; ++i){
+					if(feasibleIntvs[i][0] <= minT)
+						minT = std::max(minT, feasibleIntvs[i][1]);
+					if(feasibleIntvs[i][1] >= maxT)
+						maxT = std::min(maxT, feasibleIntvs[i][0]);
+				}
+			} while(minT != prevMinT || maxT != prevMaxT);
+
+			// Separation has been certified over the entire candidate interval.
+			if(minT > maxT) { colTime = Array2d(-1,-1); return false; }
+			// minT can only increase as more axes are tested. Once it exceeds the best queued
+			// lower bound, defer the remaining axes until this pair becomes competitive again.
+			if(minT < maxT && minT > competingTime) {
+				colTime = Array2d(minT, maxT);
+				if(yielded != nullptr) *yielded = true;
+				return true;
+			}
 		}
 
-		if(feasibleCount == 0){
-			colTime = initTimeIntv;
-			return true;
-		}
-		std::sort(feasibleIntvs.begin(), feasibleIntvs.begin() + feasibleCount,
-			[](const Array2d& intv1, const Array2d& intv2){ return intv1[0] < intv2[0]; });
-		if(feasibleIntvs[0][0] < initTimeIntv[0]){
-			minT = std::max(minT, feasibleIntvs[0][1]);
-			for(int i = 1; i < feasibleCount; ++i)
-				if(feasibleIntvs[i][0] < minT)
-					minT = std::max(minT, feasibleIntvs[i][1]);
-				else break;
-		}
-		if(minT > maxT){ colTime = Array2d(-1,-1); return false; }
-
-		std::sort(feasibleIntvs.begin(), feasibleIntvs.begin() + feasibleCount,
-			[](const Array2d& intv1, const Array2d& intv2){ return intv1[1] > intv2[1]; });
-		if(feasibleIntvs[0][1] > initTimeIntv[1]){
-			maxT = std::min(maxT, feasibleIntvs[0][0]);
-			for(int i = 1; i < feasibleCount; ++i)
-				if(feasibleIntvs[i][1] > maxT)
-					maxT = std::min(maxT, feasibleIntvs[i][0]);
-				else break;
-		}
-
-		if(minT >= maxT) colTime = Array2d(maxT, minT);
-		else colTime = Array2d(minT, maxT);
+		colTime = Array2d(minT, maxT);
 		return true;
 	}
 
@@ -245,8 +245,11 @@ public:
 			ParamBound1 pb1;
 			ParamBound2 pb2;
 			Array2d tIntv;
+			bool unresolved; // primitiveCheck yielded before testing all axes
 			PatchPair(const ParamBound1& c1, const ParamBound2& c2,
-					const Array2d& t = Array2d(0,DeltaT)): pb1(c1), pb2(c2), tIntv(t) {}
+					const Array2d& t = Array2d(0,DeltaT),
+					const bool pending = false):
+					pb1(c1), pb2(c2), tIntv(t), unresolved(pending) {}
 			bool operator<(PatchPair const &o) const { return tIntv[0] > o.tIntv[0]; }
 			double calcWidth() const{
 				const double w1 = pb1.width(), w2 = pb2.width();
@@ -254,6 +257,7 @@ public:
 			}
 		};
 
+		// Patch pairs compete by their current TOI lower bounds.
 		std::priority_queue<PatchPair> heap;
 		ParamBound1 initParam1;
 		ParamBound2 initParam2;
@@ -261,8 +265,25 @@ public:
 		if (primitiveCheck(CpPos1, CpVel1, CpPos2, CpVel2, initParam1, initParam2, colTime, bb, initTimeIntv))
 			heap.emplace(initParam1, initParam2, colTime);
 		while (!heap.empty()) {
-			auto const cur = heap.top();
+			auto cur = heap.top();
 			heap.pop();
+			if(cur.unresolved){
+				const double competingTime =
+					bb == BoundingBoxType::OBB && !heap.empty() ? heap.top().tIntv[0] : INFT;
+				bool yielded = false;
+				if(!primitiveCheck(
+						CpPos1.divideBezierPatch(cur.pb1),
+						CpVel1.divideBezierPatch(cur.pb1),
+						CpPos2.divideBezierPatch(cur.pb2),
+						CpVel2.divideBezierPatch(cur.pb2),
+						colTime, bb, cur.tIntv, competingTime, &yielded)) continue;
+				cur.tIntv = colTime;
+				cur.unresolved = yielded;
+				if(yielded){
+					heap.push(cur);
+					continue;
+				}
+			}
 
 			// Meets the precision requirement
 			if (cur.calcWidth() < deltaDist) {
@@ -290,10 +311,14 @@ public:
 				const ParamBound1& divUvB1 = childBounds1[i];
 				for (int j = 0; j < 4; j++) {
 					const ParamBound2& divUvB2 = childBounds2[j];
+					// Competitive yielding pays off for 15-axis OBB, but not for 3-axis AABB.
+					const double competingTime =
+						bb == BoundingBoxType::OBB && !heap.empty() ? heap.top().tIntv[0] : INFT;
+					bool yielded = false;
 					if (primitiveCheck(
 							childPos1[i], childVel1[i], childPos2[j], childVel2[j],
-							colTime, bb, cur.tIntv)){
-						heap.emplace(divUvB1, divUvB2, colTime);
+							colTime, bb, cur.tIntv, competingTime, &yielded)){
+						heap.emplace(divUvB1, divUvB2, colTime, yielded);
 					}
 				}
 			}
