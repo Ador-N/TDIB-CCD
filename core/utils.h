@@ -45,7 +45,7 @@ void setAxes(const std::array<Vector3d, ParamObj1::cntCp>& ptPos1,
 		Vector3d lv1 = ln1.cross(lu1);
 
 		Vector3d lu2 = ParamObj2::axisU(ptPos2) + t*ParamObj2::axisU(ptVel2);
-		Vector3d lv2tmp = ParamObj2::axisV(ptPos2) + t*ParamObj2::axisU(ptVel2);
+		Vector3d lv2tmp = ParamObj2::axisV(ptPos2) + t*ParamObj2::axisV(ptVel2);
 		Vector3d ln2 = lu2.cross(lv2tmp);
 		Vector3d lv2 = ln2.cross(lu2);
 
