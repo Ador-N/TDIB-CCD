@@ -25,6 +25,16 @@ public:
 		auto ptVel1 = CpVel1.divideBezierPatch(divUvB1);
 		auto ptPos2 = CpPos2.divideBezierPatch(divUvB2);
 		auto ptVel2 = CpVel2.divideBezierPatch(divUvB2);
+		return primitiveCheck(ptPos1, ptVel1, ptPos2, ptVel2, colTime, bb, initTimeIntv);
+	}
+
+	static bool primitiveCheck(
+			const std::array<Vector3d, ParamObj1::cntCp>& ptPos1,
+			const std::array<Vector3d, ParamObj1::cntCp>& ptVel1,
+			const std::array<Vector3d, ParamObj2::cntCp>& ptPos2,
+			const std::array<Vector3d, ParamObj2::cntCp>& ptVel2,
+			Array2d& colTime, const BoundingBoxType& bb,
+			const Array2d& initTimeIntv) {
 		// Enlarge the time interval by a small margin so that the end points are correctly treated
 		Array2d timeIntv(initTimeIntv[0]-1e-6, initTimeIntv[1]+1e-6);
 
@@ -262,11 +272,27 @@ public:
 			}
 
 			// Divide the current patch into four-to-four pieces
+			std::array<ParamBound1, 4> childBounds1;
+			std::array<ParamBound2, 4> childBounds2;
+			std::array<std::array<Vector3d, ParamObj1::cntCp>, 4> childPos1;
+			std::array<std::array<Vector3d, ParamObj1::cntCp>, 4> childVel1;
+			std::array<std::array<Vector3d, ParamObj2::cntCp>, 4> childPos2;
+			std::array<std::array<Vector3d, ParamObj2::cntCp>, 4> childVel2;
+			for(int i = 0; i < 4; ++i){
+				childBounds1[i] = cur.pb1.interpSubpatchParam(i);
+				childPos1[i] = CpPos1.divideBezierPatch(childBounds1[i]);
+				childVel1[i] = CpVel1.divideBezierPatch(childBounds1[i]);
+				childBounds2[i] = cur.pb2.interpSubpatchParam(i);
+				childPos2[i] = CpPos2.divideBezierPatch(childBounds2[i]);
+				childVel2[i] = CpVel2.divideBezierPatch(childBounds2[i]);
+			}
 			for (int i = 0; i < 4; i++) {
-				ParamBound1 divUvB1(cur.pb1.interpSubpatchParam(i));
+				const ParamBound1& divUvB1 = childBounds1[i];
 				for (int j = 0; j < 4; j++) {
-					ParamBound2 divUvB2(cur.pb2.interpSubpatchParam(j));
-					if (primitiveCheck(CpPos1, CpVel1, CpPos2, CpVel2, divUvB1, divUvB2, colTime, bb, cur.tIntv)){
+					const ParamBound2& divUvB2 = childBounds2[j];
+					if (primitiveCheck(
+							childPos1[i], childVel1[i], childPos2[j], childVel2[j],
+							colTime, bb, cur.tIntv)){
 						heap.emplace(divUvB1, divUvB2, colTime);
 					}
 				}
