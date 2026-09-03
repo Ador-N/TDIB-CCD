@@ -2,6 +2,7 @@
 #include "paramMesh.h"
 #include "solverTrad.h"
 #include "solverTD.h"
+#include "solverSubdivCA.h"
 #include "utils.h"
 #include "triBezier.h"
 #include "triRatBezier.h"
@@ -32,25 +33,33 @@ void randomTest(const SolverType& solver, const BoundingBoxType & bb,
 
 	using steady_clock = std::chrono::steady_clock;
 	using duration = std::chrono::duration<double>;
-	const auto initialTime = steady_clock::now();
+	double totalSolveSeconds = 0.0;
 	for(int k = 0; k < kase; k ++){
 		generatePatchPair<ObjType>(pos1.ctrlp, vel1.ctrlp, pos2.ctrlp, vel2.ctrlp);
+		const auto solveStart = steady_clock::now();
 		if(solver==SolverType::TDIntv)
 			t = SolverTD<ObjType,ObjType,ParamType,ParamType>::solveCCD(pos1,vel1,pos2,vel2,uv1,uv2,bb,deltaDist);
 		else if(solver==SolverType::TradIntv)
 			t = SolverTrad<ObjType,ObjType,ParamType,ParamType>::solveCCD(pos1,vel1,pos2,vel2,uv1,uv2,bb,deltaDist);
+		else if(solver==SolverType::SubdivCA)
+			t = SolverSubdivCA<ObjType,ObjType,ParamType,ParamType>::solveCCD(pos1,vel1,pos2,vel2,uv1,uv2,deltaDist);
 		else{
 			std::cerr<<"solver not implemented!\n";
 			exit(-1);
 		}
-		if(t>=0)hasCol++;
-		std::cout<<"case "<<k<<" done.\n";
+		totalSolveSeconds += duration(steady_clock::now() - solveStart).count();
+		double distance = std::numeric_limits<double>::quiet_NaN();
+		if(t>=0){
+			hasCol++;
+			const Vector3d point1 = pos1.evaluatePatchPoint(uv1) + t * vel1.evaluatePatchPoint(uv1);
+			const Vector3d point2 = pos2.evaluatePatchPoint(uv2) + t * vel2.evaluatePatchPoint(uv2);
+			distance = (point2 - point1).norm();
+		}
+		std::cout << "case " << k << ": toi=" << std::setprecision(17) << t
+			<< ", final distance=" << distance << "\n";
 	}
-	const auto endTime = steady_clock::now();
 	std::cout << hasCol<<" pairs have collided.\n";
-	std::cout << "average seconds: " <<
-		duration(endTime - initialTime).count()/kase
-		<< std::endl;
+	std::cout << "average seconds: " << totalSolveSeconds/kase << std::endl;
 }
 
 void singleTest(const SolverType& solver, const BoundingBoxType & bb,
@@ -84,6 +93,8 @@ void singleTest(const SolverType& solver, const BoundingBoxType & bb,
 		t = SolverTD<RecCubicBezier,RecCubicBezier,RecParamBound,RecParamBound>::solveCCD(pos1,vel1,pos2,vel2,uv1,uv2,bb,deltaDist);
 	else if(solver==SolverType::TradIntv)
 		t = SolverTrad<RecCubicBezier,RecCubicBezier,RecParamBound,RecParamBound>::solveCCD(pos1,vel1,pos2,vel2,uv1,uv2,bb,deltaDist);
+	else if(solver==SolverType::SubdivCA)
+		t = SolverSubdivCA<RecCubicBezier,RecCubicBezier,RecParamBound,RecParamBound>::solveCCD(pos1,vel1,pos2,vel2,uv1,uv2,deltaDist);
 	else{
 		std::cerr<<"solver not implemented!\n";
 		exit(-1);

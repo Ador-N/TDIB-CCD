@@ -4,7 +4,7 @@
 inline std::unique_ptr<ArgsParser> BuildArgsParser()
 {
 	auto parser = std::make_unique<ArgsParser>();
-	parser->addArgument<std::string>("solver", 's', "type of ccd solver (trad, td)", "td");
+	parser->addArgument<std::string>("solver", 's', "type of ccd solver (trad, td, subdivca)", "td");
 	parser->addArgument<std::string>("experiment", 'e', "type of experiment (rand, single, bunny)", "rand");
 	parser->addArgument<std::string>("bb", 'b', "type of bounding box (aabb, obb)", "obb");
 
@@ -37,6 +37,8 @@ int main(int argc, char *argv[]){
 		solver = SolverType::TDIntv;
 	else if(solverType=="trad")
 		solver = SolverType::TradIntv;
+	else if(solverType=="subdivca")
+		solver = SolverType::SubdivCA;
 	else{
 		std::cerr<<"Solver not implemented.\n";
 		exit(-1);

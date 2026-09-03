@@ -7,6 +7,6 @@ add_requires("eigen","fmt")
 
 target("scene")
     set_kind("binary")
-    add_includedirs("core", {public = true})
+    add_includedirs("core", "external/openGJK/scalar/include", {public = true})
     add_packages("eigen","fmt", {public = true})
-    add_files("scene/demo.cpp","core/*.cpp")
+    add_files("scene/demo.cpp","core/*.cpp", "external/openGJK/scalar/openGJK.c")

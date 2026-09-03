@@ -40,6 +40,6 @@ std::normal_distribution<double> randNormal(0.0, 1.0);
 std::default_random_engine randGenerator(0);
 
 enum class BoundingBoxType { AABB, OBB };
-enum class SolverType { TDIntv, TradIntv };
+enum class SolverType { TDIntv, TradIntv, SubdivCA };
 // BoundingBoxType BBDefault = BoundingBoxType::OBB;
 // SolverType SolverDefault = SolverType::BaseIntv;

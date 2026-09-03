@@ -42,7 +42,7 @@ xmake run scene
 ```
 Optional arguments:
 ```
--s    Type of CCD solver. Use "trad" for the traditional method, or "td" for our time-dependent method.
+-s    Type of CCD solver. Use "trad" for the traditional method, "td" for our time-dependent method, or "subdivca" for the subdivision-ca method.
 -e    Type of experiment. Use "rand" for the random test, "single" for the single test, or "bunny" for the bunny-torus test.
 -b    Type of inclusions. Use "aabb" for AABB, or "obb" for OBB.
 -d    Precision requirement, i.e., maximum width of the parametric interval.

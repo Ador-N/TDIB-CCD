@@ -1,0 +1,3 @@
+[submodule "external/openGJK"]
+	path = external/openGJK
+	url = https://github.com/MattiaMontanari/openGJK.git
