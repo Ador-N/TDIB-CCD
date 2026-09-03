@@ -1,4 +1,5 @@
 # pragma once
+#include "patchSubdivisionCache.h"
 #include "utils.h"
 template<typename ParamObj1, typename ParamObj2, typename ParamBound1, typename ParamBound2>
 class SolverTD{
@@ -242,28 +243,25 @@ public:
 						const double deltaDist,
 						const double upperTime = DeltaT) {
 		struct PatchPair{
-			ParamBound1 pb1;
-			ParamBound2 pb2;
+			std::size_t node1;
+			std::size_t node2;
 			Array2d tIntv;
 			bool unresolved; // primitiveCheck yielded before testing all axes
-			PatchPair(const ParamBound1& c1, const ParamBound2& c2,
+			PatchPair(const std::size_t id1, const std::size_t id2,
 					const Array2d& t = Array2d(0,DeltaT),
 					const bool pending = false):
-					pb1(c1), pb2(c2), tIntv(t), unresolved(pending) {}
+					node1(id1), node2(id2), tIntv(t), unresolved(pending) {}
 			bool operator<(PatchPair const &o) const { return tIntv[0] > o.tIntv[0]; }
-			double calcWidth() const{
-				const double w1 = pb1.width(), w2 = pb2.width();
-				return std::max(std::max(w1, w2), tIntv[1]-tIntv[0]);
-			}
 		};
 
 		// Patch pairs compete by their current TOI lower bounds.
 		std::priority_queue<PatchPair> heap;
-		ParamBound1 initParam1;
-		ParamBound2 initParam2;
+		PatchSubdivisionCache<ParamObj1, ParamBound1> cache1(CpPos1, CpVel1);
+		PatchSubdivisionCache<ParamObj2, ParamBound2> cache2(CpPos2, CpVel2);
 		Array2d initTimeIntv(0,upperTime), colTime;
-		if (primitiveCheck(CpPos1, CpVel1, CpPos2, CpVel2, initParam1, initParam2, colTime, bb, initTimeIntv))
-			heap.emplace(initParam1, initParam2, colTime);
+		if (primitiveCheck(cache1[0].position, cache1[0].velocity,
+				cache2[0].position, cache2[0].velocity, colTime, bb, initTimeIntv))
+			heap.emplace(0, 0, colTime);
 		while (!heap.empty()) {
 			auto cur = heap.top();
 			heap.pop();
@@ -272,10 +270,8 @@ public:
 					bb == BoundingBoxType::OBB && !heap.empty() ? heap.top().tIntv[0] : INFT;
 				bool yielded = false;
 				if(!primitiveCheck(
-						CpPos1.divideBezierPatch(cur.pb1),
-						CpVel1.divideBezierPatch(cur.pb1),
-						CpPos2.divideBezierPatch(cur.pb2),
-						CpVel2.divideBezierPatch(cur.pb2),
+						cache1[cur.node1].position, cache1[cur.node1].velocity,
+						cache2[cur.node2].position, cache2[cur.node2].velocity,
 						colTime, bb, cur.tIntv, competingTime, &yielded)) continue;
 				cur.tIntv = colTime;
 				cur.unresolved = yielded;
@@ -286,39 +282,29 @@ public:
 			}
 
 			// Meets the precision requirement
-			if (cur.calcWidth() < deltaDist) {
-				uv1 = cur.pb1.centerParam();
-				uv2 = cur.pb2.centerParam();
+			const double width = std::max(
+				std::max(cache1[cur.node1].bound.width(), cache2[cur.node2].bound.width()),
+				cur.tIntv[1] - cur.tIntv[0]);
+			if (width < deltaDist) {
+				uv1 = cache1[cur.node1].bound.centerParam();
+				uv2 = cache2[cur.node2].bound.centerParam();
 				return cur.tIntv[0];
 			}
 
 			// Divide the current patch into four-to-four pieces
-			std::array<ParamBound1, 4> childBounds1;
-			std::array<ParamBound2, 4> childBounds2;
-			std::array<std::array<Vector3d, ParamObj1::cntCp>, 4> childPos1;
-			std::array<std::array<Vector3d, ParamObj1::cntCp>, 4> childVel1;
-			std::array<std::array<Vector3d, ParamObj2::cntCp>, 4> childPos2;
-			std::array<std::array<Vector3d, ParamObj2::cntCp>, 4> childVel2;
-			for(int i = 0; i < 4; ++i){
-				childBounds1[i] = cur.pb1.interpSubpatchParam(i);
-				childPos1[i] = CpPos1.divideBezierPatch(childBounds1[i]);
-				childVel1[i] = CpVel1.divideBezierPatch(childBounds1[i]);
-				childBounds2[i] = cur.pb2.interpSubpatchParam(i);
-				childPos2[i] = CpPos2.divideBezierPatch(childBounds2[i]);
-				childVel2[i] = CpVel2.divideBezierPatch(childBounds2[i]);
-			}
+			const auto children1 = cache1.subdivide(cur.node1);
+			const auto children2 = cache2.subdivide(cur.node2);
 			for (int i = 0; i < 4; i++) {
-				const ParamBound1& divUvB1 = childBounds1[i];
 				for (int j = 0; j < 4; j++) {
-					const ParamBound2& divUvB2 = childBounds2[j];
 					// Competitive yielding pays off for 15-axis OBB, but not for 3-axis AABB.
 					const double competingTime =
 						bb == BoundingBoxType::OBB && !heap.empty() ? heap.top().tIntv[0] : INFT;
 					bool yielded = false;
 					if (primitiveCheck(
-							childPos1[i], childVel1[i], childPos2[j], childVel2[j],
+							cache1[children1[i]].position, cache1[children1[i]].velocity,
+							cache2[children2[j]].position, cache2[children2[j]].velocity,
 							colTime, bb, cur.tIntv, competingTime, &yielded)){
-						heap.emplace(divUvB1, divUvB2, colTime, yielded);
+						heap.emplace(children1[i], children2[j], colTime, yielded);
 					}
 				}
 			}
